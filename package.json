@@ -1,0 +1,20 @@
+{
+  "name": "mcp-server__typescript",
+  "version": "1.0.0",
+  "description": "Creating my own MCP Server and Client and connect it to others",
+  "main": "index.js",
+  "scripts": {
+    "server:build": "tsc",
+    "server:build:watch": "tsc src/server.ts --watch",
+    "server:dev": "tsx watch src/server.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.19.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6"
+  }
+}
