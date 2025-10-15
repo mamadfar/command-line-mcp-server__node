@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "name": "mamadf",
+    "email": "mamad@gmail.com",
+    "address": "mamad",
+    "phone": "12123123"
+  },
+  {
+    "id": 2,
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "address": "123 Main Street, New York, NY 10001",
+    "phone": "+1-555-0123"
+  },
+  {
+    "id": 3,
+    "name": "mamad",
+    "email": "mamad@gmail.com",
+    "address": "456 Oak Avenue, Los Angeles, CA 90001",
+    "phone": "+1-555-7890"
+  }
+]
