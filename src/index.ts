@@ -2,6 +2,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { createUser, getUsers, ICreateUserParams } from "./lib/helpers/user.js";
+import { CreateMessageResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const server = new McpServer({
   name: "My MCP Server",
@@ -84,8 +85,8 @@ const createUserSchema = {
 
 server.tool(
   "create-user",
+  createUserSchema,
   {
-    ...createUserSchema,
     title: "Create User",
     description: "Creates a new user in the database",
     readOnlyHint: false, //? Indicate that this tool does not modify state
@@ -115,6 +116,108 @@ server.tool(
         ],
       };
     }
+  }
+);
+
+//? Using sampling/createMessage to generate fake user data
+//? This requires the server to have access to a language model that can generate text
+//? The generated text is then parsed as JSON to extract the user data
+//? In a real-world scenario, you would want to add more error handling and validation here
+server.tool(
+  "create-random-user",
+  "Create a random user with fake data",
+  {
+    title: "Create Random User",
+    description: "Creates a new user with random fake data",
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true,
+  },
+  async () => {
+    const res = await server.server.request(
+      {
+        method: "sampling/createMessage",
+        params: {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: `Generate fake user data. The user should have a realistic name, email, address, and phone number.
+            Return this data as a JSON object with no other text or formatter so it can be used with JSON.parse.`,
+              },
+            },
+          ],
+          maxTokens: 1024,
+        },
+      },
+      CreateMessageResultSchema
+    );
+    if (res.content.type !== "text") {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Failed to generate user data.",
+          },
+        ],
+      };
+    }
+
+    try {
+      const fakeUser = JSON.parse(
+        res.content.text
+          .trim()
+          .replace(/^```json/, "")
+          .replace(/```$/, "")
+          .trim()
+      );
+
+      const id = await createUser(fakeUser);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Random user created successfully with ID: ${id}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to parse generated user data: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+//* ----------------------------------- Prompts ----------------------------------- *//
+
+server.prompt(
+  "generate-fake-user",
+  "Generate a fake user based on a given name",
+  {
+    name: z.string().describe("The name of the user to generate"),
+  },
+  async ({ name }) => {
+    return {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Generate a fake user with the name ${name}. The user should have a realistic email, address, and phone number.`,
+          },
+        },
+      ],
+    };
   }
 );
 

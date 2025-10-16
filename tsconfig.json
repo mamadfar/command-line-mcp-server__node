@@ -18,6 +18,6 @@
       "pkce-challenge": ["node_modules/pkce-challenge/dist/index.node"]
     }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "src/**/*.js"]
 }

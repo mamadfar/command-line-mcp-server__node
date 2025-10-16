@@ -1,6 +1,9 @@
 {
   "servers": {
-    //? Create by running `MCP: Add Server...` command in VSCode, then add the command to start your server, e.g. `node dist/index.js`, then type a name for your server, e.g. `my-mcp-server`, and finally select the workspace folder.
+    /*
+    ? Create by running `MCP: Add Server...` command in VSCode, then add the command to start your server, e.g. `node dist/index.js`,
+    ? then type a name for your server, e.g. `my-mcp-server`, and finally select the workspace (current project) folder or for all workspace folders.
+    */
     "my-mcp-server-7844a43c": {
       "type": "stdio",
       "command": "node",
