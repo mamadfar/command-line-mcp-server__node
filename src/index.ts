@@ -37,7 +37,7 @@ server.resource(
     };
   }
 );
-
+//? ResourceTemplate used to define a resource with parameters that come from the URI or user input
 server.resource(
   "user-details",
   new ResourceTemplate("users:///{userId}/profile", {

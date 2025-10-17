@@ -33,5 +33,12 @@
     "email": "jessica.turner82@example.com",
     "address": "742 Maplewood Drive, Springfield, IL 62704",
     "phone": "(217) 555-0198"
+  },
+  {
+    "id": 6,
+    "name": "mamal",
+    "email": "mamal@mamal.com",
+    "address": "tehroon",
+    "phone": "123123123"
   }
 ]
