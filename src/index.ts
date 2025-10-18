@@ -10,7 +10,7 @@ const server = new McpServer({
   capabilities: {
     resources: {},
     tools: {},
-    // prompts: {},
+    prompts: {},
   },
 });
 
@@ -85,35 +85,30 @@ const createUserSchema = {
 
 server.tool(
   "create-user",
-  createUserSchema,
+  "Create a new user in the database",
+  {
+    name: z.string(),
+    email: z.string(),
+    address: z.string(),
+    phone: z.string(),
+  },
   {
     title: "Create User",
-    description: "Creates a new user in the database",
-    readOnlyHint: false, //? Indicate that this tool does not modify state
-    destructiveHint: false, //? Indicate that this tool does not delete or remove data
-    idempotentHint: false, //? Indicate that this tool may produce different results when called multiple times with the same input
-    openWorldHint: true, //? Indicate that this tool may have side effects outside of the system (e.g., interacting with external services or APIs)
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true,
   },
-  async (args) => {
-    const params = args as ICreateUserParams;
+  async (params) => {
     try {
       const id = await createUser(params);
+
       return {
-        content: [
-          {
-            type: "text",
-            text: `User created successfully with ID: ${id}`,
-          },
-        ],
+        content: [{ type: "text", text: `User ${id} created successfully` }],
       };
-    } catch (error) {
+    } catch {
       return {
-        content: [
-          {
-            type: "text",
-            text: error instanceof Error ? error.message : "Failed to create user.",
-          },
-        ],
+        content: [{ type: "text", text: "Failed to save user" }],
       };
     }
   }
@@ -128,53 +123,137 @@ server.tool(
   "Create a random user with fake data",
   {
     title: "Create Random User",
-    description: "Creates a new user with random fake data",
     readOnlyHint: false,
     destructiveHint: false,
     idempotentHint: false,
     openWorldHint: true,
   },
   async () => {
-    const res = await server.server.request(
-      {
-        method: "sampling/createMessage",
-        params: {
-          messages: [
-            {
-              role: "user",
-              content: {
-                type: "text",
-                text: `Generate fake user data. The user should have a realistic name, email, address, and phone number.
-            Return this data as a JSON object with no other text or formatter so it can be used with JSON.parse.`,
-              },
-            },
-          ],
-          maxTokens: 1024,
-        },
-      },
-      CreateMessageResultSchema
-    );
-    if (res.content.type !== "text") {
-      return {
-        content: [
-          {
-            type: "text",
-            text: "Failed to generate user data.",
-          },
-        ],
-      };
-    }
-
     try {
-      const fakeUser = JSON.parse(
-        res.content.text
-          .trim()
-          .replace(/^```json/, "")
-          .replace(/```$/, "")
-          .trim()
+      const res = await server.server.request(
+        {
+          method: "sampling/createMessage",
+          params: {
+            messages: [
+              {
+                role: "user",
+                content: {
+                  type: "text",
+                  text: `Generate fake user data with EXACTLY these fields:
+              {
+                "name": "Full Name Here",
+                "email": "email@example.com",
+                "address": "123 Street Name, City, State ZIP",
+                "phone": "+1-555-1234"
+              }
+              Return ONLY valid JSON with these exact field names. No additional fields, no nested objects, no code blocks.`,
+                },
+              },
+            ],
+            maxTokens: 1024,
+          },
+        },
+        CreateMessageResultSchema
       );
 
-      const id = await createUser(fakeUser);
+      if (res.content.type !== "text") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Failed to generate user data: Invalid content type.",
+            },
+          ],
+        };
+      }
+
+      // Check if we got an empty response (from stub model in inspector)
+      if (!res.content.text || res.content.text.trim() === "") {
+        // Generate a mock user for testing with inspector
+        const mockUser = {
+          name: `Test User ${Date.now()}`,
+          email: `testuser${Date.now()}@example.com`,
+          address: `${Math.floor(Math.random() * 999) + 1} Test Street, Test City, TC 12345`,
+          phone: `+1-555-${String(Math.floor(Math.random() * 9000) + 1000)}`,
+        };
+
+        const id = await createUser(mockUser);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Random user created successfully with ID: ${id} (using mock data because no LLM is available)`,
+            },
+          ],
+        };
+      }
+
+      // Parse the LLM response
+      const cleanedText = res.content.text
+        .trim()
+        .replace(/^```json\s*/i, "")
+        .replace(/```\s*$/i, "")
+        .trim();
+
+      let fakeUser;
+      try {
+        fakeUser = JSON.parse(cleanedText);
+      } catch (parseError) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to parse user data: ${
+                parseError instanceof Error ? parseError.message : "Invalid JSON"
+              }. Raw response: ${cleanedText.substring(0, 200)}`,
+            },
+          ],
+        };
+      }
+
+      // Normalize and validate fields - handle common variations
+      const normalizedUser = {
+        name:
+          fakeUser.name ||
+          (fakeUser.firstName && fakeUser.lastName
+            ? `${fakeUser.firstName} ${fakeUser.lastName}`
+            : null),
+        email: fakeUser.email,
+        address:
+          typeof fakeUser.address === "string"
+            ? fakeUser.address
+            : fakeUser.address?.street
+            ? `${fakeUser.address.street}, ${fakeUser.address.city || ""}, ${
+                fakeUser.address.state || ""
+              } ${fakeUser.address.zipCode || fakeUser.address.zipcode || ""}`.trim()
+            : fakeUser.street || fakeUser.address
+            ? `${fakeUser.street || fakeUser.address || ""}, ${fakeUser.city || ""}, ${
+                fakeUser.state || ""
+              } ${fakeUser.zipCode || fakeUser.zipcode || ""}`.trim()
+            : null,
+        phone: fakeUser.phone || fakeUser.phoneNumber || fakeUser.phone_number,
+      };
+
+      // Validate the required fields after normalization
+      if (
+        !normalizedUser.name ||
+        !normalizedUser.email ||
+        !normalizedUser.address ||
+        !normalizedUser.phone
+      ) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Failed to generate user data: Missing required fields after normalization. Got: ${JSON.stringify(
+                normalizedUser
+              )}`,
+            },
+          ],
+        };
+      }
+
+      const id = await createUser(normalizedUser);
       return {
         content: [
           {
@@ -188,7 +267,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: `Failed to parse generated user data: ${
+            text: `Failed to create random user: ${
               error instanceof Error ? error.message : "Unknown error"
             }`,
           },
@@ -222,5 +301,11 @@ server.prompt(
 );
 
 //? We use stdio for local testing and connection with local clients
-const transport = new StdioServerTransport();
-await server.connect(transport);
+//? IMPORTANT: Do not use console.log or any stdout output in MCP servers
+//? All communication happens via JSON-RPC over stdio
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
+
+main();

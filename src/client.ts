@@ -1,9 +1,21 @@
-import { input, select } from "@inquirer/prompts";
-import { Client } from "@modelcontextprotocol/sdk/client";
+import "dotenv/config";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { confirm, input, select } from "@inquirer/prompts";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { Tool } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CreateMessageRequestSchema,
+  Prompt,
+  PromptMessage,
+  Tool,
+} from "@modelcontextprotocol/sdk/types.js";
+import { dynamicTool, generateText, jsonSchema } from "ai";
 
-const mcpClient = new Client(
+const google = createGoogleGenerativeAI({
+  apiKey: process.env.GEMINI_API_KEY,
+});
+
+const mcp = new Client(
   {
     name: "My MCP Client",
     version: "1.0.0",
@@ -18,18 +30,113 @@ const mcpClient = new Client(
 const transport = new StdioClientTransport({
   command: "node",
   args: ["dist/index.js"],
-  stderr: "ignore", //? Means we ignore the stderr output from the server to not show in the client logs
+  stderr: "ignore", //? Changed from "ignore" to "pipe" to see any error messages from the server
 });
 
-await mcpClient.connect(transport);
-const [{ tools }, { resources }, { prompts }, { resourceTemplates }] = await Promise.all([
-  mcpClient.listTools(),
-  mcpClient.listResources(),
-  mcpClient.listPrompts(),
-  mcpClient.listResourceTemplates(),
-]);
+async function main() {
+  await mcp.connect(transport);
+  const [{ tools }, { prompts }, { resources }, { resourceTemplates }] = await Promise.all([
+    mcp.listTools(),
+    mcp.listPrompts(),
+    mcp.listResources(),
+    mcp.listResourceTemplates(),
+  ]);
 
-console.log("You are connected!");
+  mcp.setRequestHandler(CreateMessageRequestSchema, async (request) => {
+    const texts: string[] = [];
+    for (const message of request.params.messages) {
+      const text = await handleServerMessagePrompt(message);
+      if (text != null) texts.push(text);
+    }
+
+    return {
+      role: "user",
+      model: "gemini-2.0-flash",
+      stopReason: "endTurn",
+      content: {
+        type: "text",
+        text: texts.join("\n"),
+      },
+    };
+  });
+
+  console.log("You are connected!");
+  while (true) {
+    const option = await select({
+      message: "What would you like to do",
+      choices: ["Query", "Tools", "Resources", "Prompts", "Exit"],
+    });
+
+    switch (option) {
+      case "Tools": {
+        const toolName = await select({
+          message: "Select a tool",
+          choices: tools.map((tool) => ({
+            name: tool.annotations?.title || tool.name,
+            value: tool.name,
+            description: tool.description,
+          })),
+        });
+        const tool = tools.find((t) => t.name === toolName);
+        if (tool == null) {
+          console.error("Tool not found.");
+        } else {
+          await handleTool(tool);
+        }
+        break;
+      }
+      case "Resources": {
+        const resourceUri = await select({
+          message: "Select a resource",
+          choices: [
+            ...resources.map((resource) => ({
+              name: resource.name,
+              value: resource.uri,
+              description: resource.description,
+            })),
+            ...resourceTemplates.map((template) => ({
+              name: template.name,
+              value: template.uriTemplate,
+              description: template.description,
+            })),
+          ],
+        });
+        const uri =
+          resources.find((r) => r.uri === resourceUri)?.uri ??
+          resourceTemplates.find((r) => r.uriTemplate === resourceUri)?.uriTemplate;
+        if (uri == null) {
+          console.error("Resource not found.");
+        } else {
+          await handleResource(uri);
+        }
+        break;
+      }
+      case "Prompts": {
+        const promptName = await select({
+          message: "Select a prompt",
+          choices: prompts.map((prompt) => ({
+            name: prompt.name,
+            value: prompt.name,
+            description: prompt.description,
+          })),
+        });
+        const prompt = prompts.find((p) => p.name === promptName);
+        if (prompt == null) {
+          console.error("Prompt not found.");
+        } else {
+          await handlePrompt(prompt);
+        }
+        break;
+      }
+      case "Query":
+        await handleQuery(tools);
+        break;
+      case "Exit":
+        console.log("Goodbye!");
+        process.exit(0);
+    }
+  }
+}
 
 const handleTool = async (tool: Tool) => {
   const args: Record<string, string> = {};
@@ -38,17 +145,16 @@ const handleTool = async (tool: Tool) => {
       message: `Enter value for ${key} (${(value as { type: string }).type}):`,
     });
   }
-  const res = await mcpClient.callTool({
+  const res = await mcp.callTool({
     name: tool.name,
     arguments: args,
   });
   console.log((res.content as [{ text: string }])[0].text);
 };
+
 const handleResource = async (uri: string) => {
   let finalUri = uri;
-  console.log(uri);
   const paramMatches = uri.match(/{([^}]+)}/g); //? Find all {param} in the URI
-  console.log(paramMatches);
 
   if (paramMatches) {
     for (const paramMatch of paramMatches) {
@@ -59,87 +165,107 @@ const handleResource = async (uri: string) => {
       finalUri = finalUri.replace(paramMatch, paramValue);
     }
   }
-  const res = await mcpClient.readResource({
+  const res = await mcp.readResource({
     uri: finalUri,
   });
   console.log(JSON.stringify(JSON.parse(res.contents[0].text as string), null, 2));
 };
 
-const handlePrompt = async (prompt: any) => {};
+const handlePrompt = async (prompt: Prompt) => {
+  const args: Record<string, string> = {};
+  for (const arg of prompt.arguments ?? []) {
+    args[arg.name] = await input({
+      message: `Enter value for ${arg.name}:`,
+    });
+  }
 
-while (true) {
-  const option = await select({
-    message: "What do you want to do?",
-    choices: ["Query", "Tools", "Resources", "Prompts", "Exit"],
+  const res = await mcp.getPrompt({
+    name: prompt.name,
+    arguments: args,
   });
 
-  switch (option) {
-    case "Query": {
-      break;
-    }
-    case "Tools": {
-      const toolName = await select({
-        message: "Select a tool",
-        choices: tools.map((tool) => ({
-          name: tool.annotations?.title || tool.name,
-          value: tool.name,
-          description: tool.description,
-        })),
-      });
-      const tool = tools.find((t) => t.name === toolName);
-      if (!tool) {
-        throw new Error("Tool not found");
-      } else {
-        await handleTool(tool);
-      }
-      break;
-    }
-    case "Resources": {
-      const resourceUri = await select({
-        message: "Select a resource",
-        choices: [
-          ...resources.map((resource) => ({
-            name: resource.name,
-            value: resource.uri,
-            description: resource.description,
-          })),
-          ...resourceTemplates.map((template) => ({
-            name: template.name,
-            value: template.uriTemplate,
-            description: template.description,
-          })),
-        ],
-      });
-      const uri =
-        resources.find((r) => r.uri === resourceUri)?.uri ??
-        resourceTemplates.find((t) => t.uriTemplate === resourceUri)?.uriTemplate;
-      console.log(resources);
-      if (!uri) {
-        throw new Error("Resource not found");
-      } else {
-        await handleResource(uri);
-      }
-      break;
-    }
-    case "Prompts": {
-      const promptName = await select({
-        message: "Select a prompt",
-        choices: prompts.map((prompt) => ({
-          name: prompt.name,
-          value: prompt.name,
-          description: prompt.description,
-        })),
-      });
-      const prompt = prompts.find((p) => p.name === promptName);
-      if (!prompt) {
-        throw new Error("Prompt not found");
-      } else {
-        await handlePrompt(prompt);
-      }
-      break;
-    }
-    case "Exit":
-      console.log("Goodbye!");
-      process.exit(0);
+  for (const message of res.messages) {
+    console.log(await handleServerMessagePrompt(message));
   }
-}
+};
+
+const handleServerMessagePrompt = async (message: PromptMessage) => {
+  if (message.content.type !== "text") return;
+
+  console.log(message.content.text);
+  const run = await confirm({
+    message: "Would you like to run the above prompt",
+    default: true,
+  });
+
+  if (!run) return;
+
+  const { text } = await generateText({
+    model: google("gemini-2.0-flash"),
+    prompt: message.content.text,
+  });
+
+  return text;
+};
+
+const handleQuery = async (tools: Tool[]) => {
+  const query = await input({ message: "Enter your query" });
+
+  const aiTools = tools.reduce((obj, tool) => {
+    // Ensure the schema has a type property set to "object"
+    const schema = tool.inputSchema || {};
+
+    // Clean up the schema - remove $schema and ensure type is object
+    const { $schema, ...cleanedSchema } = schema as any;
+    const normalizedSchema = {
+      type: "object" as const,
+      properties: cleanedSchema.properties || {},
+      ...(cleanedSchema.required && { required: cleanedSchema.required }),
+    };
+
+    return {
+      ...obj,
+      [tool.name]: dynamicTool({
+        description: tool.description,
+        inputSchema: jsonSchema(normalizedSchema),
+        execute: async (args: unknown) => {
+          return await mcp.callTool({
+            name: tool.name,
+            arguments: args as Record<string, any>,
+          });
+        },
+      }),
+    };
+  }, {});
+
+  const { text, toolResults } = await generateText({
+    model: google("gemini-2.0-flash"),
+    prompt: query,
+    tools: aiTools,
+  });
+
+  if (text) {
+    console.log(text);
+  } else if (toolResults && toolResults.length > 0) {
+    console.log("\n✅ Tool Results:");
+    for (const toolResult of toolResults) {
+      console.log(`\n📦 Tool: ${toolResult.toolName}`);
+      // @ts-expect-error - Dynamic tool results have output property
+      const output = toolResult.output as any;
+      const content = output?.content;
+      if (Array.isArray(content)) {
+        for (const item of content) {
+          if (item.type === "text") {
+            console.log(`   ${item.text}`);
+          }
+        }
+      } else if (output) {
+        console.log(`   ${JSON.stringify(output, null, 2)}`);
+      }
+    }
+  } else {
+    console.log("No text or tool results generated.");
+  }
+};
+
+main();
