@@ -96,17 +96,5 @@
     "email": "bob@bob.com",
     "address": "asdfasdf",
     "phone": "2341234"
-  },
-  {
-    "id": 15,
-    "name": "Eleanor Vance",
-    "email": "eleanor.vance78@example.com",
-    "address": {
-      "street": "481 Willow Creek Rd",
-      "city": "Henderson",
-      "state": "NV",
-      "zip": "89012"
-    },
-    "phone": "702-555-9284"
   }
 ]

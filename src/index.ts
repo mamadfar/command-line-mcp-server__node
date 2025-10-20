@@ -188,7 +188,6 @@ server.tool(
         };
       }
 
-      // Parse the LLM response
       const cleanedText = res.content.text
         .trim()
         .replace(/^```json\s*/i, "")
@@ -211,7 +210,6 @@ server.tool(
         };
       }
 
-      // Normalize and validate fields - handle common variations
       const normalizedUser = {
         name:
           fakeUser.name ||
@@ -234,7 +232,6 @@ server.tool(
         phone: fakeUser.phone || fakeUser.phoneNumber || fakeUser.phone_number,
       };
 
-      // Validate the required fields after normalization
       if (
         !normalizedUser.name ||
         !normalizedUser.email ||

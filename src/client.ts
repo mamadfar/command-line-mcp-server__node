@@ -212,10 +212,7 @@ const handleQuery = async (tools: Tool[]) => {
   const query = await input({ message: "Enter your query" });
 
   const aiTools = tools.reduce((obj, tool) => {
-    // Ensure the schema has a type property set to "object"
     const schema = tool.inputSchema || {};
-
-    // Clean up the schema - remove $schema and ensure type is object
     const { $schema, ...cleanedSchema } = schema as any;
     const normalizedSchema = {
       type: "object" as const,
@@ -247,10 +244,8 @@ const handleQuery = async (tools: Tool[]) => {
   if (text) {
     console.log(text);
   } else if (toolResults && toolResults.length > 0) {
-    console.log("\n✅ Tool Results:");
     for (const toolResult of toolResults) {
       console.log(`\n📦 Tool: ${toolResult.toolName}`);
-      // @ts-expect-error - Dynamic tool results have output property
       const output = toolResult.output as any;
       const content = output?.content;
       if (Array.isArray(content)) {
